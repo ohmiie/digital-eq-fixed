@@ -6,7 +6,8 @@ import {
   Camera, Settings, Users, LogOut, PackageSearch, 
   History, CheckSquare, AlertCircle, FileDown, FileUp, 
   Printer, Plus, Search, Trash2, Box, ShieldCheck,
-  Calendar, Check, X, ShoppingCart, PlusCircle, MinusCircle, Scan
+  Calendar, Check, X, ShoppingCart, PlusCircle, MinusCircle, Scan,
+  Edit
 } from 'lucide-react';
 
 // --- Firebase Config ของคุณ ---
@@ -84,7 +85,7 @@ export default function App() {
 
       {currentView === 'login' && <LoginScreen appUsers={appUsers} setAppUser={setAppUser} setCurrentView={setCurrentView} showMessage={showMessage} />}
       {currentView === 'admin' && <AdminDashboard appUser={appUser} handleLogout={handleLogout} equipments={equipments} appUsers={appUsers} transactions={transactions} showMessage={showMessage} />}
-      {currentView === 'student' && <StudentDashboard appUser={appUser} handleLogout={handleLogout} equipments={equipments} transactions={transactions} showMessage={showMessage} />}
+      {currentView === 'student' && <StudentDashboard appUser={appUser} handleLogout={handleLogout} equipments={equipments} transactions={transactions} appUsers={appUsers} showMessage={showMessage} />}
       {currentView === 'teacher' && <TeacherDashboard appUser={appUser} handleLogout={handleLogout} equipments={equipments} transactions={transactions} appUsers={appUsers} showMessage={showMessage} />}
     </div>
   );
@@ -197,6 +198,7 @@ function AdminDashboard({ appUser, handleLogout, equipments, appUsers, transacti
         <div className="flex overflow-x-auto md:flex-col flex-1 py-2 md:py-4 hide-scrollbar">
           <NavItem active={activeTab === 'equipments'} onClick={() => setActiveTab('equipments')} icon={<Box className="w-4 h-4 md:w-5 md:h-5" />} label="จัดการอุปกรณ์" />
           <NavItem active={activeTab === 'users'} onClick={() => setActiveTab('users')} icon={<Users className="w-4 h-4 md:w-5 md:h-5" />} label="จัดการผู้ใช้งาน" />
+          <NavItem active={activeTab === 'transactions'} onClick={() => setActiveTab('transactions')} icon={<History className="w-4 h-4 md:w-5 md:h-5" />} label="จัดการรายการยืม-คืน" />
           <NavItem active={activeTab === 'reports'} onClick={() => setActiveTab('reports')} icon={<Printer className="w-4 h-4 md:w-5 md:h-5" />} label="รายงาน (Report)" />
         </div>
         <div className="hidden md:block p-4 border-t border-gray-100">
@@ -209,6 +211,7 @@ function AdminDashboard({ appUser, handleLogout, equipments, appUsers, transacti
       <div className="flex-1 overflow-auto p-4 md:p-8">
         {activeTab === 'equipments' && <AdminEquipments equipments={equipments} showMessage={showMessage} />}
         {activeTab === 'users' && <AdminUsers appUsers={appUsers} showMessage={showMessage} />}
+        {activeTab === 'transactions' && <AdminTransactions transactions={transactions} equipments={equipments} showMessage={showMessage} />}
         {activeTab === 'reports' && <AdminReports equipments={equipments} appUsers={appUsers} transactions={transactions} />}
       </div>
     </div>
@@ -448,6 +451,111 @@ function AdminUsers({ appUsers, showMessage }) {
   );
 }
 
+// --- Admin: Transactions (Edit) ---
+function AdminTransactions({ transactions, equipments, showMessage }) {
+  const [editingTx, setEditingTx] = useState(null);
+  const [search, setSearch] = useState('');
+  
+  const sortedTx = [...transactions].sort((a,b) => new Date(b.borrowDate) - new Date(a.borrowDate));
+  const filteredTx = sortedTx.filter(t => t.studentName.includes(search) || t.equipName.includes(search) || t.studentId.includes(search));
+
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    if (!editingTx) return;
+    try {
+      await updateDoc(doc(db, 'transactions', editingTx.id), {
+        studentId: editingTx.studentId,
+        studentName: editingTx.studentName,
+        equipId: editingTx.equipId,
+        equipName: editingTx.equipName,
+        status: editingTx.status,
+        requestToTeacherName: editingTx.requestToTeacherName || '',
+        approvedByTeacherName: editingTx.approvedByTeacherName || '',
+        teacherRemarks: editingTx.teacherRemarks || '',
+        returnRemarks: editingTx.returnRemarks || ''
+      });
+      showMessage("อัปเดตข้อมูลรายการสำเร็จ");
+      setEditingTx(null);
+    } catch (err) {
+      showMessage("เกิดข้อผิดพลาดในการอัปเดต");
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if(window.confirm("ยืนยันการลบรายการประวัตินี้? (จะไม่มีการคืนค่ายอดอุปกรณ์อัตโนมัติ)")) {
+      try {
+        await deleteDoc(doc(db, 'transactions', id));
+        showMessage("ลบรายการแล้ว");
+      } catch (err) { showMessage("เกิดข้อผิดพลาดในการลบ"); }
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-6 w-full">
+      <div className="flex justify-between items-center mb-6">
+        <h3 className="text-xl font-bold text-gray-800">แก้ไขข้อมูลรายการยืม-คืน</h3>
+      </div>
+      
+      <div className="mb-4">
+        <input type="text" placeholder="ค้นหาชื่อนักเรียน, รหัส, อุปกรณ์..." className="w-full md:w-1/2 px-4 py-2 border rounded-lg outline-none focus:border-orange-500" value={search} onChange={e=>setSearch(e.target.value)}/>
+      </div>
+
+      <div className="overflow-x-auto rounded-lg border border-gray-200">
+        <table className="w-full text-left border-collapse min-w-[800px]">
+          <thead><tr className="bg-gray-100 text-gray-600 text-sm border-b"><th className="p-3">วันที่ยืม</th><th className="p-3">ผู้ยืม</th><th className="p-3">อุปกรณ์</th><th className="p-3">สถานะ</th><th className="p-3">ผู้อนุมัติ</th><th className="p-3 text-center">จัดการ</th></tr></thead>
+          <tbody>
+            {filteredTx.map(tx => (
+              <tr key={tx.id} className="border-b hover:bg-gray-50 text-sm">
+                <td className="p-3 text-gray-500">{new Date(tx.borrowDate).toLocaleString('th-TH')}</td>
+                <td className="p-3 font-medium">{tx.studentName}</td>
+                <td className="p-3 text-orange-600">{tx.equipName}</td>
+                <td className="p-3">
+                  <span className={`px-2 py-1 text-xs rounded-full ${tx.status==='approved'?'bg-blue-100 text-blue-700':tx.status==='returned'?'bg-green-100 text-green-700':tx.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{tx.status}</span>
+                </td>
+                <td className="p-3 text-gray-500">{tx.approvedByTeacherName || '-'}</td>
+                <td className="p-3 text-center flex justify-center space-x-2">
+                  <button onClick={() => setEditingTx(tx)} className="text-blue-500 hover:bg-blue-100 p-2 rounded-lg flex items-center"><Edit className="w-4 h-4 mr-1"/> แก้ไข</button>
+                  <button onClick={() => handleDelete(tx.id)} className="text-red-500 hover:bg-red-100 p-2 rounded-lg"><Trash2 className="w-4 h-4"/></button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {editingTx && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold mb-4 flex justify-between">แก้ไขรายการ (Admin) <button onClick={() => setEditingTx(null)}><X className="text-gray-500"/></button></h3>
+            <form onSubmit={handleUpdate} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><label className="text-xs text-gray-500 mb-1 block">รหัสนักเรียน</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.studentId} onChange={e=>setEditingTx({...editingTx, studentId: e.target.value})}/></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">ชื่อนักเรียน</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.studentName} onChange={e=>setEditingTx({...editingTx, studentName: e.target.value})}/></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">รหัสอุปกรณ์</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.equipId} onChange={e=>setEditingTx({...editingTx, equipId: e.target.value})}/></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">ชื่ออุปกรณ์</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.equipName} onChange={e=>setEditingTx({...editingTx, equipName: e.target.value})}/></div>
+              
+              <div><label className="text-xs text-gray-500 mb-1 block">สถานะ</label>
+                <select className="w-full px-3 py-2 border rounded-lg bg-white" value={editingTx.status} onChange={e=>setEditingTx({...editingTx, status: e.target.value})}>
+                  <option value="pending">pending (รออนุมัติ)</option><option value="approved">approved (กำลังยืม)</option><option value="returned">returned (คืนแล้ว)</option><option value="rejected">rejected (ปฏิเสธ)</option>
+                </select>
+              </div>
+              <div><label className="text-xs text-gray-500 mb-1 block">ชื่อครูที่เสนอขอ</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.requestToTeacherName || ''} onChange={e=>setEditingTx({...editingTx, requestToTeacherName: e.target.value})}/></div>
+              <div><label className="text-xs text-gray-500 mb-1 block">ชื่อครูผู้อนุมัติ</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.approvedByTeacherName || ''} onChange={e=>setEditingTx({...editingTx, approvedByTeacherName: e.target.value})}/></div>
+              
+              <div className="md:col-span-2"><label className="text-xs text-gray-500 mb-1 block">หมายเหตุจากครู (ตอนอนุมัติ)</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.teacherRemarks || ''} onChange={e=>setEditingTx({...editingTx, teacherRemarks: e.target.value})}/></div>
+              <div className="md:col-span-2"><label className="text-xs text-gray-500 mb-1 block">หมายเหตุการคืน</label><input className="w-full px-3 py-2 border rounded-lg" value={editingTx.returnRemarks || ''} onChange={e=>setEditingTx({...editingTx, returnRemarks: e.target.value})}/></div>
+              
+              <div className="md:col-span-2 flex justify-end mt-4 space-x-2">
+                <button type="button" onClick={() => setEditingTx(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button>
+                <button type="submit" className="px-6 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">บันทึกการแก้ไข</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- Admin: Reports ---
 function AdminReports({ equipments, appUsers, transactions }) {
   const exportToCSV = (dataList, headers, filename) => {
@@ -457,7 +565,7 @@ function AdminReports({ equipments, appUsers, transactions }) {
   };
 
   const handleExportEq = () => exportToCSV(equipments.map(eq => [eq.equipId, eq.name, eq.category, eq.totalQty, eq.availableQty]), ['รหัส', 'ชื่ออุปกรณ์', 'หมวดหมู่', 'ทั้งหมด', 'คงเหลือ'], 'equipment_report.csv');
-  const handleExportTx = () => exportToCSV(transactions.map(tx => [tx.studentId, tx.studentName, tx.equipName, tx.status, new Date(tx.borrowDate).toLocaleString('th-TH'), tx.teacherRemarks || '', tx.returnRemarks || '']), ['รหัส นศ.', 'ชื่อ', 'อุปกรณ์', 'สถานะ', 'วันที่ยืม', 'หมายเหตุอาจารย์', 'หมายเหตุตอนคืน'], 'transaction_report.csv');
+  const handleExportTx = () => exportToCSV(transactions.map(tx => [tx.studentId, tx.studentName, tx.equipName, tx.status, new Date(tx.borrowDate).toLocaleString('th-TH'), tx.approvedByTeacherName || '', tx.returnRemarks || '']), ['รหัส นศ.', 'ชื่อ', 'อุปกรณ์', 'สถานะ', 'วันที่ยืม', 'ผู้อนุมัติ', 'หมายเหตุตอนคืน'], 'transaction_report.csv');
 
   return (
     <div className="bg-white rounded-xl shadow-sm p-6 print:shadow-none print:m-0 print:p-0">
@@ -489,7 +597,7 @@ function AdminReports({ equipments, appUsers, transactions }) {
 // ==========================================
 // 3. STUDENT DASHBOARD
 // ==========================================
-function StudentDashboard({ appUser, handleLogout, equipments, transactions, showMessage }) {
+function StudentDashboard({ appUser, handleLogout, equipments, transactions, appUsers, showMessage }) {
   const [activeTab, setActiveTab] = useState('borrow');
 
   return (
@@ -503,7 +611,7 @@ function StudentDashboard({ appUser, handleLogout, equipments, transactions, sho
         </div>
       </div>
       <div className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-6">
-        {activeTab === 'borrow' && <StudentBorrow appUser={appUser} equipments={equipments} transactions={transactions} showMessage={showMessage}/>}
+        {activeTab === 'borrow' && <StudentBorrow appUser={appUser} equipments={equipments} transactions={transactions} appUsers={appUsers} showMessage={showMessage}/>}
         {activeTab === 'browse' && <SharedBrowse equipments={equipments} />}
         {activeTab === 'history' && <StudentHistory appUser={appUser} transactions={transactions} />}
       </div>
@@ -534,12 +642,15 @@ function Navbar({ user, onLogout }) {
 }
 
 // --- Student: Borrow ---
-function StudentBorrow({ appUser, equipments, transactions, showMessage }) {
+function StudentBorrow({ appUser, equipments, transactions, appUsers, showMessage }) {
   const [scanId, setScanId] = useState('');
   const [cart, setCart] = useState([]);
   const [returnDate, setReturnDate] = useState('');
   const [isScanning, setIsScanning] = useState(false);
+  const [selectedTeacherId, setSelectedTeacherId] = useState('');
 
+  const teachersList = useMemo(() => appUsers.filter(u => u.role === 'teacher'), [appUsers]);
+  
   const activeTx = transactions.filter(t => t.studentId === appUser.uid && (t.status === 'pending' || t.status === 'approved'));
   const activeCount = activeTx.length;
   const cartCount = cart.reduce((sum, item) => sum + item.borrowQty, 0);
@@ -580,16 +691,31 @@ function StudentBorrow({ appUser, equipments, transactions, showMessage }) {
   const handleBorrow = async () => {
     if (cart.length === 0) return;
     if (!returnDate) return showMessage("กรุณาเลือกวันเวลาที่คาดว่าจะคืน");
+    if (!selectedTeacherId) return showMessage("กรุณาเลือกชื่ออาจารย์ผู้พิจารณาอนุมัติ");
+
+    const selectedTeacher = teachersList.find(t => t.uid === selectedTeacherId);
+
     try {
       for (const item of cart) {
         for (let i = 0; i < item.borrowQty; i++) {
           await addDoc(collection(db, 'transactions'), {
-            studentId: appUser.uid, studentName: appUser.name, equipId: item.equipId, equipName: item.name,
-            borrowDate: new Date().toISOString(), expectedReturnDate: returnDate, status: 'pending', teacherRemarks: '', returnRemarks: ''
+            studentId: appUser.uid, 
+            studentName: appUser.name, 
+            equipId: item.equipId, 
+            equipName: item.name,
+            borrowDate: new Date().toISOString(), 
+            expectedReturnDate: returnDate, 
+            status: 'pending', 
+            requestToTeacherId: selectedTeacher.uid,
+            requestToTeacherName: selectedTeacher.name,
+            approvedByTeacherName: '',
+            teacherRemarks: '', 
+            returnRemarks: ''
           });
         }
       }
-      showMessage(`ส่งคำขอยืมอุปกรณ์ ${cartCount} ชิ้น เรียบร้อยแล้ว รออาจารย์อนุมัติ`); setCart([]); setReturnDate('');
+      showMessage(`ส่งคำขอยืมอุปกรณ์ ${cartCount} ชิ้น เรียบร้อยแล้ว รออาจารย์ ${selectedTeacher.name} อนุมัติ`); 
+      setCart([]); setReturnDate(''); setSelectedTeacherId('');
     } catch (err) { showMessage("เกิดข้อผิดพลาดในการทำรายการ"); }
   };
 
@@ -633,10 +759,26 @@ function StudentBorrow({ appUser, equipments, transactions, showMessage }) {
               </div>
             ))}
           </div>
-          <div className="mt-6 p-4 border rounded-xl bg-white">
-             <label className="block text-sm font-bold mb-2">กำหนดวันคืน</label>
-             <input type="datetime-local" className="w-full px-4 py-3 border rounded-lg mb-4 outline-none focus:border-orange-500 bg-gray-50" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
-             <button onClick={handleBorrow} className="w-full bg-orange-500 text-white py-3 rounded-lg font-bold">ยืนยันการยืมอุปกรณ์ ({cartCount} ชิ้น)</button>
+          <div className="mt-6 p-4 border rounded-xl bg-white space-y-4">
+             <div>
+               <label className="block text-sm font-bold mb-2">กำหนดวันคืน</label>
+               <input type="datetime-local" className="w-full px-4 py-3 border rounded-lg outline-none focus:border-orange-500 bg-gray-50" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} />
+             </div>
+             <div>
+               <label className="block text-sm font-bold mb-2">เสนออาจารย์ผู้พิจารณาอนุมัติ</label>
+               <select className="w-full px-4 py-3 border rounded-lg outline-none focus:border-orange-500 bg-gray-50" value={selectedTeacherId} onChange={(e) => setSelectedTeacherId(e.target.value)}>
+                 <option value="">-- กรุณาเลือกรายชื่ออาจารย์ --</option>
+                 {teachersList.map(teacher => (
+                   <option key={teacher.uid} value={teacher.uid}>{teacher.name}</option>
+                 ))}
+               </select>
+             </div>
+             <button 
+               onClick={handleBorrow} 
+               disabled={!selectedTeacherId || !returnDate}
+               className={`w-full py-3 rounded-lg font-bold transition ${(!selectedTeacherId || !returnDate) ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-orange-500 text-white hover:bg-orange-600'}`}>
+               ยืนยันการยืมอุปกรณ์ ({cartCount} ชิ้น)
+             </button>
           </div>
         </div>
       )}
@@ -704,7 +846,11 @@ function StudentHistory({ appUser, transactions }) {
       <div className="space-y-4">
         {myTx.map(tx => (
           <div key={tx.id} className="p-4 border rounded-lg hover:bg-gray-50 flex flex-col md:flex-row md:justify-between md:items-center">
-            <div><h4 className="font-bold">{tx.equipName}</h4><p className="text-xs text-gray-500 mt-1">ยืม: {new Date(tx.borrowDate).toLocaleString('th-TH')}</p></div>
+            <div>
+              <h4 className="font-bold">{tx.equipName}</h4>
+              <p className="text-xs text-gray-500 mt-1">ยืม: {new Date(tx.borrowDate).toLocaleString('th-TH')}</p>
+              {tx.approvedByTeacherName && <p className="text-xs text-gray-500 mt-1">ผู้อนุมัติ: {tx.approvedByTeacherName}</p>}
+            </div>
             <div className="mt-2 md:mt-0 flex flex-col items-start md:items-end">
               <span className={`px-2 py-1 text-xs rounded-full font-medium ${tx.status==='approved'?'bg-blue-100 text-blue-700':tx.status==='returned'?'bg-green-100 text-green-700':tx.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{tx.status}</span>
               {tx.returnRemarks && <p className="text-xs mt-1 text-orange-600">คืน: {tx.returnRemarks}</p>}
@@ -740,7 +886,7 @@ function TeacherDashboard({ appUser, handleLogout, equipments, transactions, app
         {overdueTx.length > 0 && (
           <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4"><h3 className="text-red-700 font-bold flex items-center mb-2"><AlertCircle className="w-5 h-5 mr-2"/> อุปกรณ์เลยกำหนดส่ง</h3><ul className="text-sm text-red-600 ml-7">{overdueTx.map(tx => <li key={`alert-${tx.id}`}>- {tx.studentName} : {tx.equipName}</li>)}</ul></div>
         )}
-        {activeTab === 'approve' && <TeacherApprove equipments={equipments} pendingTx={pendingTx} showMessage={showMessage}/>}
+        {activeTab === 'approve' && <TeacherApprove appUser={appUser} equipments={equipments} pendingTx={pendingTx} showMessage={showMessage}/>}
         {activeTab === 'return' && <TeacherReturn equipments={equipments} activeTx={activeTx} showMessage={showMessage}/>}
         {activeTab === 'history' && <TeacherAllHistory transactions={transactions} />}
         {activeTab === 'browse' && <SharedBrowse equipments={equipments} />}
@@ -749,7 +895,7 @@ function TeacherDashboard({ appUser, handleLogout, equipments, transactions, app
   );
 }
 
-function TeacherApprove({ equipments, pendingTx, showMessage }) {
+function TeacherApprove({ appUser, equipments, pendingTx, showMessage }) {
   const [selectedTx, setSelectedTx] = useState(null);
   const [remark, setRemark] = useState('');
   const [isDamaged, setIsDamaged] = useState(false);
@@ -760,28 +906,37 @@ function TeacherApprove({ equipments, pendingTx, showMessage }) {
     if (!eq || eq.availableQty <= 0) return showMessage("ไม่สามารถอนุมัติได้ อุปกรณ์ในสต๊อกหมดแล้ว");
 
     try {
-      await updateDoc(doc(db, 'transactions', selectedTx.id), { status: 'approved', teacherRemarks: isDamaged ? `ชำรุดแต่ยืมได้: ${remark}` : remark });
+      await updateDoc(doc(db, 'transactions', selectedTx.id), { 
+        status: 'approved', 
+        approvedByTeacherName: appUser.name, // บันทึกชื่อครูผู้อนุมัติ
+        teacherRemarks: isDamaged ? `ชำรุดแต่ยืมได้: ${remark}` : remark 
+      });
       await updateDoc(doc(db, 'equipments', eq.id), { availableQty: eq.availableQty - 1 });
       showMessage("อนุมัติการยืมเรียบร้อยแล้ว"); setSelectedTx(null); setRemark(''); setIsDamaged(false);
     } catch (err) { showMessage("เกิดข้อผิดพลาด"); }
   };
 
   const handleReject = async (id) => {
-    try { await updateDoc(doc(db, 'transactions', id), { status: 'rejected' }); showMessage("ปฏิเสธการยืมแล้ว"); } catch (err) { showMessage("เกิดข้อผิดพลาด"); }
+    try { await updateDoc(doc(db, 'transactions', id), { status: 'rejected', approvedByTeacherName: appUser.name }); showMessage("ปฏิเสธการยืมแล้ว"); } catch (err) { showMessage("เกิดข้อผิดพลาด"); }
   };
 
   return (
     <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100">
       <h2 className="text-xl font-bold mb-4">รายการรออนุมัติ</h2>
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-left min-w-[500px]">
-          <thead><tr className="bg-gray-50 border-b text-sm"><th className="p-3">นักเรียน</th><th className="p-3">อุปกรณ์</th><th className="p-3">วันที่ขอ</th><th className="p-3 text-center">จัดการ</th></tr></thead>
+        <table className="w-full text-left min-w-[600px]">
+          <thead><tr className="bg-gray-50 border-b text-sm"><th className="p-3">นักเรียน</th><th className="p-3">อุปกรณ์</th><th className="p-3">วันที่ขอ</th><th className="p-3">เสนอถึง (ครู)</th><th className="p-3 text-center">จัดการ</th></tr></thead>
           <tbody>
             {pendingTx.map(tx => (
-              <tr key={tx.id} className="border-b"><td className="p-3 text-sm">{tx.studentName}</td><td className="p-3 text-orange-600 font-medium text-sm">{tx.equipName}</td><td className="p-3 text-xs text-gray-500">{new Date(tx.borrowDate).toLocaleString('th-TH')}</td>
-                <td className="p-3 flex justify-center space-x-2"><button onClick={() => setSelectedTx(tx)} className="px-3 py-1 bg-orange-500 text-white text-xs rounded-lg">อนุมัติ</button><button onClick={() => handleReject(tx.id)} className="px-3 py-1 bg-gray-200 text-xs rounded-lg">ปฏิเสธ</button></td>
+              <tr key={tx.id} className="border-b">
+                <td className="p-3 text-sm">{tx.studentName}</td>
+                <td className="p-3 text-orange-600 font-medium text-sm">{tx.equipName}</td>
+                <td className="p-3 text-xs text-gray-500">{new Date(tx.borrowDate).toLocaleString('th-TH')}</td>
+                <td className="p-3 text-sm text-blue-600 font-medium">{tx.requestToTeacherName || '-'}</td>
+                <td className="p-3 flex justify-center space-x-2"><button onClick={() => setSelectedTx(tx)} className="px-3 py-1 bg-orange-500 text-white text-xs rounded-lg">พิจารณา</button><button onClick={() => handleReject(tx.id)} className="px-3 py-1 bg-gray-200 text-xs rounded-lg hover:bg-gray-300">ปฏิเสธ</button></td>
               </tr>
             ))}
+            {pendingTx.length === 0 && <tr><td colSpan="5" className="p-6 text-center text-gray-500">ไม่มีรายการรออนุมัติ</td></tr>}
           </tbody>
         </table>
       </div>
@@ -789,9 +944,13 @@ function TeacherApprove({ equipments, pendingTx, showMessage }) {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white p-6 rounded-xl shadow-xl w-full max-w-md">
             <h3 className="text-lg font-bold mb-4">ยืนยันการอนุมัติให้ {selectedTx.studentName}</h3>
+            <div className="mb-4 text-sm text-gray-600">
+              <p>อุปกรณ์: <span className="font-bold text-orange-600">{selectedTx.equipName}</span></p>
+              <p>นักเรียนเสนอให้ครู: <span className="font-bold text-blue-600">{selectedTx.requestToTeacherName || '-'}</span> พิจารณา</p>
+            </div>
             <label className="flex items-center space-x-2 text-sm bg-orange-50 p-2 rounded mb-4"><input type="checkbox" checked={isDamaged} onChange={(e) => setIsDamaged(e.target.checked)} className="rounded text-orange-500"/><span>อุปกรณ์ชำรุดแต่ยืมได้</span></label>
             <textarea className="w-full px-3 py-2 border rounded-lg mb-4" rows="2" value={remark} onChange={(e) => setRemark(e.target.value)} placeholder="หมายเหตุ..."></textarea>
-            <div className="flex justify-end space-x-2"><button onClick={() => setSelectedTx(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={handleApprove} className="px-4 py-2 bg-orange-500 text-white rounded-lg">ยืนยันอนุมัติ</button></div>
+            <div className="flex justify-end space-x-2"><button onClick={() => setSelectedTx(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={handleApprove} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600">ยืนยันอนุมัติ</button></div>
           </div>
         </div>
       )}
@@ -822,14 +981,19 @@ function TeacherReturn({ equipments, activeTx, showMessage }) {
     <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100">
       <h2 className="text-xl font-bold mb-4">รับคืนอุปกรณ์</h2>
       <div className="overflow-x-auto rounded-lg border">
-        <table className="w-full text-left min-w-[500px]">
-          <thead><tr className="bg-gray-50 border-b text-sm"><th className="p-3">นักเรียน</th><th className="p-3">อุปกรณ์</th><th className="p-3">กำหนดคืน</th><th className="p-3 text-center">จัดการ</th></tr></thead>
+        <table className="w-full text-left min-w-[600px]">
+          <thead><tr className="bg-gray-50 border-b text-sm"><th className="p-3">นักเรียน</th><th className="p-3">อุปกรณ์</th><th className="p-3">กำหนดคืน</th><th className="p-3">ผู้อนุมัติยืม</th><th className="p-3 text-center">จัดการ</th></tr></thead>
           <tbody>
             {activeTx.map(tx => (
-              <tr key={tx.id} className="border-b"><td className="p-3 text-sm">{tx.studentName}</td><td className="p-3 text-orange-600 font-medium text-sm">{tx.equipName}</td><td className="p-3 text-xs text-red-500">{new Date(tx.expectedReturnDate).toLocaleString('th-TH')}</td>
-                <td className="p-3 text-center"><button onClick={() => setSelectedTx(tx)} className="px-4 py-1.5 bg-green-500 text-white text-xs rounded-lg">รับคืน</button></td>
+              <tr key={tx.id} className="border-b">
+                <td className="p-3 text-sm">{tx.studentName}</td>
+                <td className="p-3 text-orange-600 font-medium text-sm">{tx.equipName}</td>
+                <td className="p-3 text-xs text-red-500">{new Date(tx.expectedReturnDate).toLocaleString('th-TH')}</td>
+                <td className="p-3 text-sm text-gray-600">{tx.approvedByTeacherName || '-'}</td>
+                <td className="p-3 text-center"><button onClick={() => setSelectedTx(tx)} className="px-4 py-1.5 bg-green-500 text-white text-xs rounded-lg hover:bg-green-600">รับคืน</button></td>
               </tr>
             ))}
+            {activeTx.length === 0 && <tr><td colSpan="5" className="p-6 text-center text-gray-500">ไม่มีรายการรอรับคืน</td></tr>}
           </tbody>
         </table>
       </div>
@@ -839,7 +1003,7 @@ function TeacherReturn({ equipments, activeTx, showMessage }) {
             <h3 className="text-lg font-bold mb-4">ตรวจรับคืนจาก {selectedTx.studentName}</h3>
             <select className="w-full px-3 py-2 border rounded-lg mb-3 bg-white" value={returnStatus} onChange={(e) => setReturnStatus(e.target.value)}>{statusOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}</select>
             {returnStatus !== 'ปกติ' && <textarea className="w-full px-3 py-2 border rounded-lg mb-3" rows="2" value={customRemark} onChange={(e) => setCustomRemark(e.target.value)} placeholder="รายละเอียดความเสียหาย..."></textarea>}
-            <div className="flex justify-end space-x-2"><button onClick={() => setSelectedTx(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={handleReturn} className="px-4 py-2 bg-green-500 text-white rounded-lg">ยืนยันรับคืน</button></div>
+            <div className="flex justify-end space-x-2"><button onClick={() => setSelectedTx(null)} className="px-4 py-2 bg-gray-100 rounded-lg">ยกเลิก</button><button onClick={handleReturn} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600">ยืนยันรับคืน</button></div>
           </div>
         </div>
       )}
@@ -867,14 +1031,20 @@ function TeacherAllHistory({ transactions }) {
       </div>
       <div className="space-y-3">
         {filtered.map(tx => (
-          <div key={tx.id} className="p-4 border rounded-lg flex justify-between items-center text-sm">
-            <div><p className="font-bold">{tx.studentName} <span className="text-gray-400 font-normal">({tx.studentId})</span></p><p className="text-orange-600 mt-1">{tx.equipName}</p><p className="text-xs text-gray-500 mt-1">{new Date(tx.borrowDate).toLocaleString('th-TH')}</p></div>
+          <div key={tx.id} className="p-4 border rounded-lg flex justify-between items-center text-sm hover:bg-gray-50">
+            <div>
+              <p className="font-bold">{tx.studentName} <span className="text-gray-400 font-normal">({tx.studentId})</span></p>
+              <p className="text-orange-600 mt-1 font-medium">{tx.equipName}</p>
+              <p className="text-xs text-gray-500 mt-1">ยืม: {new Date(tx.borrowDate).toLocaleString('th-TH')}</p>
+              {tx.approvedByTeacherName && <p className="text-xs text-gray-500 mt-0.5">ผู้อนุมัติ: {tx.approvedByTeacherName}</p>}
+            </div>
             <div className="text-right">
                <span className={`px-2 py-1 text-xs rounded-full ${tx.status==='approved'?'bg-blue-100 text-blue-700':tx.status==='returned'?'bg-green-100 text-green-700':tx.status==='pending'?'bg-yellow-100 text-yellow-700':'bg-red-100 text-red-700'}`}>{tx.status}</span>
                {tx.returnRemarks && <p className="text-xs mt-2 text-gray-600">คืน: {tx.returnRemarks}</p>}
             </div>
           </div>
         ))}
+        {filtered.length === 0 && <p className="text-center text-gray-500 py-4">ไม่พบข้อมูลประวัติ</p>}
       </div>
     </div>
   );
